@@ -34,24 +34,26 @@ get_cpoe_wr <- function(pbp, old_pbp, y) {
   
 }
 
-nfl_colors <- read_csv("C:/Users/Dan/Google Drive/Windows/Desktop/R/NFL scrapR/team_colors.csv") %>%
+#getting team colors for prettier pictures
+nfl_colors <- read_csv(url(https://github.com/danmorse314/WR-CPOE/raw/master/team_colors.csv)) %>%
   mutate(primary = ifelse(team_abbr == "SEA",secondary, primary),
          primary = ifelse(team_abbr == "DEN", secondary, primary),
          primary = ifelse(team_abbr == "PIT", secondary, primary)) %>%
   select(team_abbr, primary, secondary)
 
-# CPOE STABILITY FOR WRS
+# calculate CPOE by receiver
 wr_cpoe <- NULL
-first <- 2010
-last <- 2019
+first <- 2010 #first year to calculate
+last <- 2019  #last year to calculate
 
 for (year in first:last) {
-  year_cpoe <- get_cpoe_wr(filter(pbp_all, season == year), pbp_all, (year - 1))
+  year_cpoe <- get_cpoe_wr(filter(pbp_all, season == year), pbp_all, (year - 1)) #cpoe based on previous season's data
   wr_cpoe <- bind_rows(wr_cpoe, year_cpoe)
 }
 
-wr_cpoe %>% write_csv("C:/Users/Dan/Google Drive/Windows/Desktop/R/NFL scrapR/wr_cpoe by year.csv")
+wr_cpoe %>% write_csv("FILEPATH.csv") #save for later use
 
+#calculate receiver stats
 data_rec <- pbp_all %>%
   filter(!is.na(receiver_player_name)) %>%
   mutate(name = receiver_player_name) %>%
@@ -62,16 +64,15 @@ data_rec <- pbp_all %>%
             adot = mean(air_yards, na.rm=TRUE),
             ypa = mean(yards_gained, na.rm = TRUE),
             mean_epa = mean(epa),
-            total_epa = sum(epa),
-            touchdowns = sum(touchdown),
-            interceptions = sum(interception)) %>%
+            total_epa = sum(epa)) %>%
   ungroup() %>%
   filter(targets >=50) %>%
-  left_join(wr_cpoe, by = c("name" = "name", "season" = "season")) %>%
+  left_join(wr_cpoe, by = c("name" = "name", "season" = "season")) %>%  #adds cpoe data
   mutate(expected_catches = (catch_percent - (cpoe/100)) * targets,
-         coe = catches - expected_catches) %>%
-  left_join(nfl_colors, by = c("posteam" = "team_abbr"))
+         coe = catches - expected_catches) %>%  #catches over expectation
+  left_join(nfl_colors, by = c("posteam" = "team_abbr"))  #add colors
 
+#add columns for next season data for stability plots
 data_rec <- data_rec %>%
   group_by(name) %>%
   arrange(desc(season)) %>%
@@ -83,9 +84,7 @@ data_rec <- data_rec %>%
     next_adot = lag(adot),
     next_ypa = lag(ypa),
     next_mean_epa = lag(mean_epa),
-    next_total_epa = lag(total_epa),
-    next_touchdowns = lag(touchdowns),
-    next_interceptions = lag(interceptions),
+    next_total_epa = lag(total_epa)
     next_cpoe = lag(cpoe),
     next_expected_catches = lag(expected_catches),
     next_coe = lag(coe),
@@ -93,8 +92,10 @@ data_rec <- data_rec %>%
   ) %>%
   ungroup()
 
+#r-squared for year to year stability
 r_sq <- round(summary(lm(next_cpoe ~ cpoe, data_rec))$r.squared, digits = 3)
 
+#stability plot
 data_rec %>%
   ggplot(aes(cpoe, next_cpoe)) +
   geom_smooth(method = lm, se = FALSE, color = "red", linetype = "dashed") +
@@ -103,29 +104,29 @@ data_rec %>%
   theme_bw() +
   labs(x = "CPOE year n", y = "CPOE year n+1")
 
-rosters <- read_csv("C:/Users/Dan/Google Drive/Windows/Desktop/R/NFL scrapR/rosters.csv")
+#load roster data
+rosters <- read_csv(url("https://github.com/danmorse314/WR-CPOE/raw/master/rosters.csv"))
 
+#add positions
 data_rec <- data_rec %>%
   left_join(rosters, by = c("season" = "season",
                             "name" = "abbr_player_name",
                             "posteam" = "team"))
 
+#create data fram for only WRs
 data_wr <- filter(data_rec, position == "WR")
 
 #r squared value
 r_sq <- round(summary(lm(total_epa ~ coe, data_wr))$r.squared, digits = 3)
 
-#subset of data so text repel doesn't fuck me up
+#subset of data so geom_text_repel doesn't fuck me up
 sub <- filter(data_wr, posteam == "DAL")
 
+#plot catches over expectation and total epa
 data_wr %>%
   ggplot(aes(coe, total_epa)) +
   geom_smooth(method = lm, linetype = "dashed", se = FALSE, color = "red") +
-  #geom_hline(yintercept = weighted.mean(pbp_rec$total_epa, pbp_rec$targets, na.rm = TRUE),
-  #           linetype = "dashed", color = "red") +
-  #geom_vline(xintercept = weighted.mean(pbp_rec$coe, pbp_rec$targets),
-  #           linetype = "dashed", color = "red") +
-  geom_point(size = 4, alpha = .1) +
+  geom_point(size = 3, alpha = .1) +
   geom_point(data = sub, aes(coe, total_epa), size = 4, color = sub$primary) +
   geom_text_repel(data = sub, aes(coe, total_epa, label = paste0(name,"\n",season)), color = sub$primary, size = 3) +
   #annotate("text",label = paste0("R^2 == ",r_sq), parse = TRUE, x = 24, y = 10, color = "red") +

@@ -10,7 +10,8 @@ pbp_all <- readRDS("FILEPATH/pbp_rp.rds")
 #modified cpoe code for wide receivers
 get_cpoe_wr <- function(pbp, old_pbp, y) {
   old_data <- old_pbp %>%
-    mutate(incomplete_pass=ifelse(interception==1, 1, incomplete_pass)) %>%
+    mutate(incomplete_pass=ifelse(interception==1, 1, incomplete_pass),
+    name = receiver_player_name) %>%
     filter((complete_pass==1 | incomplete_pass==1) & air_yards >= -10 & season >= y & !is.na(receiver_player_id) & !is.na(pass_location)) %>%
     select(complete_pass,desc,air_yards,pass_location,name) %>%
     mutate(air_is_zero=ifelse(air_yards==0,1,0))
